@@ -120,13 +120,29 @@ func hook(env Env, store state.Store) int {
 	if err := json.NewDecoder(env.Stdin).Decode(&in); err != nil || in.AgentID != "" {
 		return 0
 	}
-	store.Update(in.SessionID, func(st *state.State) error {
+	var message string
+	err := store.Update(in.SessionID, func(st *state.State) error {
 		tokens, err := transcript.ReadFile(in.TranscriptPath)
 		if err != nil {
 			return err
 		}
-		budget.Observe(st, tokens, in.TranscriptPath)
+		message = budget.Observe(st, tokens, in.TranscriptPath)
 		return nil
 	})
+	if err == nil && message != "" {
+		json.NewEncoder(env.Stdout).Encode(hookOutput{HookSpecificOutput: hookSpecificOutput{
+			HookEventName:     "PostToolUse",
+			AdditionalContext: message,
+		}})
+	}
 	return 0
+}
+
+type hookOutput struct {
+	HookSpecificOutput hookSpecificOutput `json:"hookSpecificOutput"`
+}
+
+type hookSpecificOutput struct {
+	HookEventName     string `json:"hookEventName"`
+	AdditionalContext string `json:"additionalContext"`
 }
