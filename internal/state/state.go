@@ -61,11 +61,37 @@ func (s Store) Update(session string, change func(*State) error) error {
 	return err
 }
 
+const staleAfter = 7 * 24 * time.Hour
+
 func (s Store) Arm(session string, threshold int, window int64, now time.Time) (State, error) {
-	return s.modify(session, true, func(st *State) error {
-		*st = State{Threshold: threshold, Window: window, ArmedAt: now}
+	st, err := s.modify(session, true, func(st *State) error {
+		if st.Window == 0 {
+			*st = State{ArmedAt: now}
+		}
+		st.Threshold, st.Window = threshold, window
 		return nil
 	})
+	if err == nil {
+		s.removeStale(now.Add(-staleAfter))
+	}
+	return st, err
+}
+
+func (s Store) removeStale(cutoff time.Time) {
+	paths, _ := filepath.Glob(filepath.Join(s.dir, "*.json"))
+	for _, path := range paths {
+		if info, err := os.Stat(path); err != nil || !info.ModTime().Before(cutoff) {
+			continue
+		}
+		f, err := lock(path)
+		if err != nil {
+			continue
+		}
+		if info, err := f.Stat(); err == nil && info.ModTime().Before(cutoff) {
+			os.Remove(path)
+		}
+		f.Close()
+	}
 }
 
 func (s Store) LogError(session string, cause error, now time.Time) error {
