@@ -51,14 +51,25 @@ func run(runs int, size int64) error {
 	}
 	env := append(os.Environ(), "XDG_STATE_HOME="+filepath.Join(dir, "state"), "CLAUDE_CODE_SESSION_ID="+session)
 
-	ok := report(fmt.Sprintf("not on (%d runs)", runs), time.Duration(10*time.Millisecond), measure(bin, env, payload, runs))
+	unarmed, err := measure(bin, env, payload, runs)
+	if err != nil {
+		return err
+	}
+	ok := report(fmt.Sprintf("not on (%d runs)", runs), 10*time.Millisecond, unarmed)
 
 	arm := exec.Command(bin, "arm", "75", "--model", "claude-opus-5-5[1m]")
 	arm.Env = env
 	if out, err := arm.CombinedOutput(); err != nil {
 		return fmt.Errorf("arm: %v: %s", err, out)
 	}
-	ok = report(fmt.Sprintf("armed, %d MB transcript (%d runs)", size>>20, runs), 50*time.Millisecond, measure(bin, env, payload, runs)) && ok
+	armed, err := measure(bin, env, payload, runs)
+	if err != nil {
+		return err
+	}
+	if log, err := os.ReadFile(filepath.Join(dir, "state", "ctx", "error.log")); err == nil {
+		return fmt.Errorf("armed runs failed instead of reading the transcript: %s", log)
+	}
+	ok = report(fmt.Sprintf("armed, %d MB transcript (%d runs)", size>>20, runs), 50*time.Millisecond, armed) && ok
 
 	if !ok {
 		return fmt.Errorf("over budget")
@@ -66,7 +77,7 @@ func run(runs int, size int64) error {
 	return nil
 }
 
-func measure(bin string, env []string, payload []byte, runs int) []time.Duration {
+func measure(bin string, env []string, payload []byte, runs int) ([]time.Duration, error) {
 	times := make([]time.Duration, 0, runs)
 	for i := -5; i < runs; i++ {
 		cmd := exec.Command(bin, "hook")
@@ -78,15 +89,14 @@ func measure(bin string, env []string, payload []byte, runs int) []time.Duration
 		err := cmd.Run()
 		elapsed := time.Since(start)
 		if err != nil || out.Len() != 0 {
-			fmt.Fprintf(os.Stderr, "hookbench: run %d: err %v, output %q\n", i, err, out.String())
-			os.Exit(1)
+			return nil, fmt.Errorf("run %d: err %v, output %q", i, err, out.String())
 		}
 		if i >= 0 {
 			times = append(times, elapsed)
 		}
 	}
 	slices.Sort(times)
-	return times
+	return times, nil
 }
 
 func report(name string, budget time.Duration, times []time.Duration) bool {
