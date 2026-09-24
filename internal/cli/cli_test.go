@@ -394,3 +394,74 @@ func TestMain(m *testing.M) {
 	}
 	os.Exit(m.Run())
 }
+
+func TestHookLogsFailures(t *testing.T) {
+	const secret = "TRANSCRIPT-CONTENT-MUST-NOT-LEAK"
+	cases := []struct {
+		name  string
+		setup func(h *harness, path string)
+		want  string
+	}{
+		{"transcript missing", func(h *harness, path string) { os.Remove(path) }, "no such file or directory"},
+		{"transcript unreadable", func(h *harness, path string) { os.Remove(path); os.Mkdir(path, 0o700) }, "is a directory"},
+		{"state file corrupt", func(h *harness, path string) {
+			os.WriteFile(h.statePath(), []byte(`{"threshold":`+secret), 0o600)
+		}, "state file corrupt"},
+		{"no assistant usage", func(h *harness, path string) {
+			os.WriteFile(path, []byte(`{"type":"user","message":{"content":"`+secret+`"}}`+"\n"), 0o600)
+		}, "no assistant usage in transcript"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.arm("75", "claude-sonnet-5")
+			path := h.transcript(8_000)
+			h.hook(path)
+			before, _ := os.ReadFile(h.statePath())
+			c.setup(h, path)
+			r := h.hook(path)
+			if r.code != 0 || r.stdout != "" {
+				t.Errorf("got %+v", r)
+			}
+			log, err := os.ReadFile(filepath.Join(h.stateDir, "error.log"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			lines := strings.Split(strings.TrimSuffix(string(log), "\n"), "\n")
+			if len(lines) != 1 || !strings.HasPrefix(lines[0], "2026-09-24T12:00:00Z "+session+" ") || !strings.Contains(lines[0], c.want) {
+				t.Errorf("error.log %q", log)
+			}
+			if strings.Contains(string(log), secret) {
+				t.Errorf("error.log holds transcript content: %q", log)
+			}
+			assertMode(t, filepath.Join(h.stateDir, "error.log"), 0o600)
+			if after, _ := os.ReadFile(h.statePath()); !bytes.Equal(before, after) && c.name != "state file corrupt" {
+				t.Errorf("state changed: %s -> %s", before, after)
+			}
+		})
+	}
+}
+
+func TestHookAppendsOneLinePerFailure(t *testing.T) {
+	h := newHarness(t)
+	h.arm("75", "claude-sonnet-5")
+	missing := filepath.Join(t.TempDir(), "gone.jsonl")
+	h.hook(missing)
+	h.hook(missing)
+	log, _ := os.ReadFile(filepath.Join(h.stateDir, "error.log"))
+	if n := strings.Count(string(log), "\n"); n != 2 {
+		t.Errorf("%d lines in error.log: %q", n, log)
+	}
+}
+
+func TestUnarmedHookLogsNothing(t *testing.T) {
+	h := newHarness(t)
+	h.arm("75", "claude-sonnet-5")
+	r := h.hookInput(map[string]string{"session_id": "not-armed", "transcript_path": filepath.Join(t.TempDir(), "gone.jsonl")})
+	if r.code != 0 || r.stdout != "" {
+		t.Errorf("got %+v", r)
+	}
+	if _, err := os.Stat(filepath.Join(h.stateDir, "error.log")); !os.IsNotExist(err) {
+		t.Errorf("error.log exists: %v", err)
+	}
+}
