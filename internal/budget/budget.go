@@ -19,7 +19,7 @@ func Window(model string) int64 {
 	return 200_000
 }
 
-func Armed(st state.State) string {
+func ArmedMessage(st state.State) string {
 	return fmt.Sprintf("[ctx] on: stop at %d%%, early warning at %d%%, window %s.", st.Threshold, warnPercent(st), windowLabel(st.Window))
 }
 

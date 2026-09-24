@@ -48,8 +48,6 @@ func arm(env Env, store state.Store, args []string) int {
 		case args[i] == "--model" && i+1 < len(args):
 			model = args[i+1]
 			i++
-		case strings.HasPrefix(args[i], "--model="):
-			model = strings.TrimPrefix(args[i], "--model=")
 		case threshold == "" && !strings.HasPrefix(args[i], "--"):
 			threshold = args[i]
 		default:
@@ -76,7 +74,7 @@ func arm(env Env, store state.Store, args []string) int {
 		fmt.Fprintf(env.Stderr, "ctx: %v\n", err)
 		return 1
 	}
-	fmt.Fprintln(env.Stdout, budget.Armed(st))
+	fmt.Fprintln(env.Stdout, budget.ArmedMessage(st))
 	return 0
 }
 
