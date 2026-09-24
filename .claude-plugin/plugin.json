@@ -1,0 +1,8 @@
+{
+  "name": "ctx",
+  "version": "0.0.0",
+  "description": "Context-aware batch working: tells an agent when its context is filling up",
+  "author": {
+    "name": "Tom Molotnikoff"
+  }
+}
