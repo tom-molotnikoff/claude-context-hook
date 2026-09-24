@@ -1,0 +1,13 @@
+{
+  "name": "ctx",
+  "owner": {
+    "name": "Tom Molotnikoff"
+  },
+  "plugins": [
+    {
+      "name": "ctx",
+      "source": "./",
+      "description": "Context-aware batch working: tells an agent when its context is filling up"
+    }
+  ]
+}
