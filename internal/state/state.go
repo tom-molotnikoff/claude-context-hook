@@ -66,9 +66,9 @@ const staleAfter = 7 * 24 * time.Hour
 func (s Store) Arm(session string, threshold int, window int64, now time.Time) (State, error) {
 	st, err := s.modify(session, true, func(st *State) error {
 		if st.Window == 0 {
-			*st = State{ArmedAt: now}
+			*st = State{Window: window, ArmedAt: now}
 		}
-		st.Threshold, st.Window = threshold, window
+		st.Threshold = threshold
 		return nil
 	})
 	if err == nil {

@@ -75,8 +75,8 @@ func (h *harness) state() map[string]any {
 	return st
 }
 
-func (h *harness) arm(threshold, model string) {
-	if r := h.run("", "arm", threshold, "--model", model); r.code != 0 {
+func (h *harness) arm(threshold string) {
+	if r := h.run("", "arm", threshold); r.code != 0 {
 		h.t.Fatalf("arm failed: %+v", r)
 	}
 }
@@ -100,7 +100,7 @@ func writeTranscript(t *testing.T, path string, tokens ...int64) {
 
 func TestArmWritesState(t *testing.T) {
 	h := newHarness(t)
-	r := h.run("", "arm", "75", "--model", "claude-opus-5-5[1m]")
+	r := h.run("", "arm", "75")
 	if r.code != 0 || r.stdout != "[ctx] on: stop at 75%, early warning at 50%, window 1M.\n" {
 		t.Fatalf("got %+v", r)
 	}
@@ -110,14 +110,11 @@ func TestArmWritesState(t *testing.T) {
 	}
 }
 
-func TestArmSmallWindow(t *testing.T) {
+func TestArmWarningPointRoundsDown(t *testing.T) {
 	h := newHarness(t)
-	r := h.run("", "arm", "80", "--model", "claude-sonnet-5")
-	if r.code != 0 || r.stdout != "[ctx] on: stop at 80%, early warning at 53%, window 200k.\n" {
+	r := h.run("", "arm", "80")
+	if r.code != 0 || r.stdout != "[ctx] on: stop at 80%, early warning at 53%, window 1M.\n" {
 		t.Fatalf("got %+v", r)
-	}
-	if st := h.state(); st["window"] != 200_000.0 {
-		t.Errorf("window %v", st["window"])
 	}
 }
 
@@ -125,7 +122,7 @@ func TestArmRejectsBadThreshold(t *testing.T) {
 	for _, threshold := range []string{"9", "91", "75.5", "abc", "-50"} {
 		t.Run(threshold, func(t *testing.T) {
 			h := newHarness(t)
-			r := h.run("", "arm", threshold, "--model", "claude-sonnet-5")
+			r := h.run("", "arm", threshold)
 			if r.code == 0 || !strings.Contains(r.stderr, "10 to 90") {
 				t.Errorf("got %+v", r)
 			}
@@ -134,19 +131,23 @@ func TestArmRejectsBadThreshold(t *testing.T) {
 	}
 }
 
-func TestArmRequiresModel(t *testing.T) {
-	h := newHarness(t)
-	r := h.run("", "arm", "75")
-	if r.code == 0 || !strings.Contains(r.stderr, "usage: ctx arm <threshold> --model <model-id>") {
-		t.Errorf("got %+v", r)
+func TestArmUsage(t *testing.T) {
+	for _, args := range [][]string{{"arm"}, {"arm", "75", "--model", "claude-sonnet-5"}, {"arm", "75", "80"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			h := newHarness(t)
+			r := h.run("", args...)
+			if r.code == 0 || r.stderr != "usage: ctx arm <threshold>\n" {
+				t.Errorf("got %+v", r)
+			}
+			assertNoState(t, h)
+		})
 	}
-	assertNoState(t, h)
 }
 
 func TestArmRequiresSessionID(t *testing.T) {
 	h := newHarness(t)
 	delete(h.env, "CLAUDE_CODE_SESSION_ID")
-	r := h.run("", "arm", "75", "--model", "claude-sonnet-5")
+	r := h.run("", "arm", "75")
 	if r.code == 0 || !strings.Contains(r.stderr, "CLAUDE_CODE_SESSION_ID") {
 		t.Errorf("got %+v", r)
 	}
@@ -157,7 +158,7 @@ func TestArmRequiresSessionID(t *testing.T) {
 
 func TestStatePermissions(t *testing.T) {
 	h := newHarness(t)
-	h.arm("75", "claude-sonnet-5")
+	h.arm("75")
 	h.hook(h.transcript(30_000))
 	assertMode(t, h.stateDir, 0o700)
 	assertMode(t, h.statePath(), 0o600)
@@ -176,7 +177,7 @@ func TestHookSilentWhenNotArmed(t *testing.T) {
 
 func TestHookIgnoresSubagents(t *testing.T) {
 	h := newHarness(t)
-	h.arm("75", "claude-sonnet-5")
+	h.arm("75")
 	before, _ := os.ReadFile(h.statePath())
 	r := h.hookInput(map[string]string{"session_id": session, "transcript_path": h.transcript(30_000), "agent_id": "agent-1"})
 	after, _ := os.ReadFile(h.statePath())
@@ -187,7 +188,7 @@ func TestHookIgnoresSubagents(t *testing.T) {
 
 func TestHookRecordsUsage(t *testing.T) {
 	h := newHarness(t)
-	h.arm("75", "claude-sonnet-5")
+	h.arm("75")
 	path := h.transcript(10_000, 30_000)
 	r := h.hook(path)
 	if r.code != 0 || r.stdout != "" {
@@ -201,7 +202,7 @@ func TestHookRecordsUsage(t *testing.T) {
 
 func TestHookKeepsStartingUsage(t *testing.T) {
 	h := newHarness(t)
-	h.arm("75", "claude-sonnet-5")
+	h.arm("75")
 	path := h.transcript(20_000)
 	h.hook(path)
 	writeTranscript(t, path, 20_000, 60_000)
@@ -214,7 +215,7 @@ func TestHookKeepsStartingUsage(t *testing.T) {
 
 func TestStatus(t *testing.T) {
 	h := newHarness(t)
-	h.arm("75", "claude-opus-5-5[1m]")
+	h.arm("75")
 	path := h.transcript(40_000)
 	h.hook(path)
 	writeTranscript(t, path, 40_000, 129_999)
@@ -268,7 +269,7 @@ func TestStatusNoFigure(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			h := newHarness(t)
-			h.arm("75", "claude-sonnet-5")
+			h.arm("75")
 			c.setup(h)
 			r := h.run("")
 			if r.code != 1 || !strings.HasPrefix(r.stdout, "[ctx] no figure: "+c.reason) {
@@ -298,10 +299,10 @@ func assertMode(t *testing.T, path string, want os.FileMode) {
 
 func TestHookEmitsMessageAsAdditionalContext(t *testing.T) {
 	h := newHarness(t)
-	h.arm("75", "claude-sonnet-5")
+	h.arm("75")
 	path := h.transcript(8_000)
 	h.hook(path)
-	writeTranscript(t, path, 8_000, 150_000)
+	writeTranscript(t, path, 8_000, 750_000)
 	r := h.hook(path)
 	want := `{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"[ctx] 75% of context used (stop at 75%). Finish the current task. Start no new tasks."}}` + "\n"
 	if r.code != 0 || r.stdout != want {
@@ -311,10 +312,10 @@ func TestHookEmitsMessageAsAdditionalContext(t *testing.T) {
 
 func TestHookSilentBelowEarlyWarning(t *testing.T) {
 	h := newHarness(t)
-	h.arm("75", "claude-sonnet-5")
+	h.arm("75")
 	path := h.transcript(8_000)
 	var out strings.Builder
-	for tokens := int64(8_000); tokens < 100_000; tokens += 7_000 {
+	for tokens := int64(8_000); tokens < 500_000; tokens += 35_000 {
 		writeTranscript(t, path, tokens)
 		r := h.hook(path)
 		out.WriteString(r.stdout)
@@ -327,17 +328,17 @@ func TestHookSilentBelowEarlyWarning(t *testing.T) {
 
 func TestSessionsAreSeparate(t *testing.T) {
 	h := newHarness(t)
-	h.arm("75", "claude-sonnet-5")
+	h.arm("75")
 	h.env["CLAUDE_CODE_SESSION_ID"] = "other"
-	h.arm("75", "claude-sonnet-5")
+	h.arm("75")
 	ours, theirs := h.transcript(8_000), h.transcript(8_000)
 	h.hook(ours)
 	h.hookInput(map[string]string{"session_id": "other", "transcript_path": theirs})
-	writeTranscript(t, ours, 8_000, 160_000)
+	writeTranscript(t, ours, 8_000, 800_000)
 	if r := h.hook(ours); !strings.Contains(r.stdout, "Start no new tasks.") {
 		t.Fatalf("got %+v", r)
 	}
-	writeTranscript(t, theirs, 8_000, 160_000)
+	writeTranscript(t, theirs, 8_000, 800_000)
 	r := h.hookInput(map[string]string{"session_id": "other", "transcript_path": theirs})
 	if !strings.Contains(r.stdout, "Start no new tasks.") {
 		t.Errorf("other session got %+v", r)
@@ -346,10 +347,10 @@ func TestSessionsAreSeparate(t *testing.T) {
 
 func TestConcurrentHooksSendOneStop(t *testing.T) {
 	h := newHarness(t)
-	h.arm("75", "claude-sonnet-5")
+	h.arm("75")
 	path := h.transcript(8_000)
 	h.hook(path)
-	writeTranscript(t, path, 8_000, 170_000)
+	writeTranscript(t, path, 8_000, 850_000)
 	input, _ := json.Marshal(map[string]string{"session_id": session, "transcript_path": path})
 
 	const processes = 10
@@ -414,7 +415,7 @@ func TestHookLogsFailures(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			h := newHarness(t)
-			h.arm("75", "claude-sonnet-5")
+			h.arm("75")
 			path := h.transcript(8_000)
 			h.hook(path)
 			before, _ := os.ReadFile(h.statePath())
@@ -444,7 +445,7 @@ func TestHookLogsFailures(t *testing.T) {
 
 func TestHookAppendsOneLinePerFailure(t *testing.T) {
 	h := newHarness(t)
-	h.arm("75", "claude-sonnet-5")
+	h.arm("75")
 	missing := filepath.Join(t.TempDir(), "gone.jsonl")
 	h.hook(missing)
 	h.hook(missing)
@@ -456,7 +457,7 @@ func TestHookAppendsOneLinePerFailure(t *testing.T) {
 
 func TestUnarmedHookLogsNothing(t *testing.T) {
 	h := newHarness(t)
-	h.arm("75", "claude-sonnet-5")
+	h.arm("75")
 	r := h.hookInput(map[string]string{"session_id": "not-armed", "transcript_path": filepath.Join(t.TempDir(), "gone.jsonl")})
 	if r.code != 0 || r.stdout != "" {
 		t.Errorf("got %+v", r)
@@ -468,15 +469,15 @@ func TestUnarmedHookLogsNothing(t *testing.T) {
 
 func TestRearmKeepsHistory(t *testing.T) {
 	h := newHarness(t)
-	h.arm("75", "claude-sonnet-5")
+	h.arm("60")
 	path := h.transcript(40_000)
 	h.hook(path)
-	writeTranscript(t, path, 40_000, 160_000)
+	writeTranscript(t, path, 40_000, 700_000)
 	if r := h.hook(path); !strings.Contains(r.stdout, "Start no new tasks.") {
 		t.Fatalf("got %+v", r)
 	}
 
-	r := h.run("", "arm", "75", "--model", "claude-opus-5-5[1m]")
+	r := h.run("", "arm", "75")
 	if r.code != 0 || r.stdout != "[ctx] on: stop at 75%, early warning at 50%, window 1M.\n" {
 		t.Fatalf("got %+v", r)
 	}
@@ -487,7 +488,7 @@ func TestRearmKeepsHistory(t *testing.T) {
 	}
 
 	r = h.run("")
-	want := "[ctx] 16% used (160000 of 1000000 tokens), started at 4%, early warning at 50%, stop at 75%.\n"
+	want := "[ctx] 70% used (700000 of 1000000 tokens), started at 4%, early warning at 50%, stop at 75%.\n"
 	if r.code != 0 || r.stdout != want {
 		t.Errorf("got %+v, want %q", r, want)
 	}
@@ -496,9 +497,9 @@ func TestRearmKeepsHistory(t *testing.T) {
 func TestArmRemovesStaleState(t *testing.T) {
 	h := newHarness(t)
 	h.env["CLAUDE_CODE_SESSION_ID"] = "old"
-	h.arm("75", "claude-sonnet-5")
+	h.arm("75")
 	h.env["CLAUDE_CODE_SESSION_ID"] = "recent"
-	h.arm("75", "claude-sonnet-5")
+	h.arm("75")
 	h.hookInput(map[string]string{"session_id": "recent", "transcript_path": filepath.Join(t.TempDir(), "gone.jsonl")})
 
 	now := time.Date(2026, 9, 24, 12, 0, 0, 0, time.UTC)
@@ -514,7 +515,7 @@ func TestArmRemovesStaleState(t *testing.T) {
 	errorLog := age("error.log", 30*24*time.Hour)
 
 	h.env["CLAUDE_CODE_SESSION_ID"] = session
-	h.arm("75", "claude-sonnet-5")
+	h.arm("75")
 
 	if _, err := os.Stat(old); !os.IsNotExist(err) {
 		t.Errorf("stale state kept: %v", err)
