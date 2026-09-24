@@ -2,7 +2,6 @@ package budget
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/tom-molotnikoff/claude-context-hook/internal/state"
 )
@@ -10,14 +9,8 @@ import (
 const (
 	MinThreshold = 10
 	MaxThreshold = 90
+	Window       = 1_000_000
 )
-
-func Window(model string) int64 {
-	if strings.HasSuffix(model, "[1m]") {
-		return 1_000_000
-	}
-	return 200_000
-}
 
 func ArmedMessage(st state.State) string {
 	return fmt.Sprintf("[ctx] on: stop at %d%%, early warning at %d%%, window %s.", st.Threshold, warnPercent(st), windowLabel(st.Window))

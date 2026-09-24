@@ -7,7 +7,6 @@ import (
 	"io"
 	"io/fs"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/tom-molotnikoff/claude-context-hook/internal/budget"
@@ -15,7 +14,7 @@ import (
 	"github.com/tom-molotnikoff/claude-context-hook/internal/transcript"
 )
 
-const armUsage = "usage: ctx arm <threshold> --model <model-id>"
+const armUsage = "usage: ctx arm <threshold>"
 
 type Env struct {
 	Args   []string
@@ -37,29 +36,16 @@ func Run(env Env) int {
 	case "hook":
 		return hook(env, store)
 	}
-	fmt.Fprintln(env.Stderr, "usage: ctx | ctx arm <threshold> --model <model-id> | ctx hook")
+	fmt.Fprintln(env.Stderr, "usage: ctx | ctx arm <threshold> | ctx hook")
 	return 2
 }
 
 func arm(env Env, store state.Store, args []string) int {
-	var threshold, model string
-	for i := 0; i < len(args); i++ {
-		switch {
-		case args[i] == "--model" && i+1 < len(args):
-			model = args[i+1]
-			i++
-		case threshold == "" && !strings.HasPrefix(args[i], "--"):
-			threshold = args[i]
-		default:
-			fmt.Fprintln(env.Stderr, armUsage)
-			return 2
-		}
-	}
-	if threshold == "" || model == "" {
+	if len(args) != 1 {
 		fmt.Fprintln(env.Stderr, armUsage)
 		return 2
 	}
-	t, err := strconv.Atoi(threshold)
+	t, err := strconv.Atoi(args[0])
 	if err != nil || t < budget.MinThreshold || t > budget.MaxThreshold {
 		fmt.Fprintf(env.Stderr, "ctx: threshold must be an integer from %d to %d\n", budget.MinThreshold, budget.MaxThreshold)
 		return 2
@@ -69,7 +55,7 @@ func arm(env Env, store state.Store, args []string) int {
 		fmt.Fprintln(env.Stderr, "ctx: CLAUDE_CODE_SESSION_ID is not set, so there is no session ID to arm")
 		return 1
 	}
-	st, err := store.Arm(session, t, budget.Window(model), env.Now())
+	st, err := store.Arm(session, t, budget.Window, env.Now())
 	if err != nil {
 		fmt.Fprintf(env.Stderr, "ctx: %v\n", err)
 		return 1

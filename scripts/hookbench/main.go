@@ -57,7 +57,7 @@ func run(runs int, size int64) error {
 	}
 	ok := report(fmt.Sprintf("not on (%d runs)", runs), 10*time.Millisecond, unarmed)
 
-	arm := exec.Command(bin, "arm", "75", "--model", "claude-opus-5-5[1m]")
+	arm := exec.Command(bin, "arm", "75")
 	arm.Env = env
 	if out, err := arm.CombinedOutput(); err != nil {
 		return fmt.Errorf("arm: %v: %s", err, out)

@@ -16,7 +16,7 @@ Threshold: `$ARGUMENTS`
 Do this before any other work.
 
 1. If no threshold was given above, ask the operator for one (a whole number from 10 to 90). Don't start work until the check is on.
-2. Run `ctx arm <threshold> --model '<model-id>'`, where `<model-id>` is your exact model ID from your system prompt, copied character for character including any suffix such as `[1m]`, inside single quotes so the shell passes it unchanged. The suffix sets the size of the context window.
+2. Run `ctx arm <threshold>`.
 3. If `ctx arm` rejects the threshold, ask the operator for a threshold and don't start work until `ctx arm` succeeds.
 
 ## The stopping rule
@@ -35,7 +35,6 @@ The check can send you two messages, each marked `[ctx]`: an early warning at tw
 ## What the check can't do
 
 - It is advisory. It can't stop you by itself, so following the rule is up to you.
-- After a `/model` switch, the window is wrong until you run `ctx arm` again with the same threshold and the new model ID.
 - `/clear` turns the check off.
 
 ## Handoff note
