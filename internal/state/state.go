@@ -80,9 +80,17 @@ func (s Store) Arm(session string, threshold int, window int64, now time.Time) (
 func (s Store) removeStale(cutoff time.Time) {
 	paths, _ := filepath.Glob(filepath.Join(s.dir, "*.json"))
 	for _, path := range paths {
-		if info, err := os.Stat(path); err == nil && info.ModTime().Before(cutoff) {
+		if info, err := os.Stat(path); err != nil || !info.ModTime().Before(cutoff) {
+			continue
+		}
+		f, err := lock(path)
+		if err != nil {
+			continue
+		}
+		if info, err := f.Stat(); err == nil && info.ModTime().Before(cutoff) {
 			os.Remove(path)
 		}
+		f.Close()
 	}
 }
 
