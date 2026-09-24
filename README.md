@@ -16,7 +16,7 @@ unzip -q ctx-"$tag".zip -d ~/.local/share/ctx/"$tag"
 
 `install.sh` adds the directory as the `ctx` marketplace, replacing any earlier one, and installs `ctx@ctx`. Start a new session to pick it up.
 
-To upgrade or roll back, install another version the same way. Whichever was installed last is active in the next session.
+To upgrade or roll back, install another version the same way. To go back to a version that is already unpacked, run its `install.sh` again. Whichever was installed last is active in the next session.
 
 ## Release
 
