@@ -465,3 +465,63 @@ func TestUnarmedHookLogsNothing(t *testing.T) {
 		t.Errorf("error.log exists: %v", err)
 	}
 }
+
+func TestRearmKeepsHistory(t *testing.T) {
+	h := newHarness(t)
+	h.arm("75", "claude-sonnet-5")
+	path := h.transcript(40_000)
+	h.hook(path)
+	writeTranscript(t, path, 40_000, 160_000)
+	if r := h.hook(path); !strings.Contains(r.stdout, "Start no new tasks.") {
+		t.Fatalf("got %+v", r)
+	}
+
+	r := h.run("", "arm", "75", "--model", "claude-opus-5-5[1m]")
+	if r.code != 0 || r.stdout != "[ctx] on: stop at 75%, early warning at 50%, window 1M.\n" {
+		t.Fatalf("got %+v", r)
+	}
+	st := h.state()
+	if st["threshold"] != 75.0 || st["window"] != 1_000_000.0 || st["start_tokens"] != 40_000.0 ||
+		st["warn_sent"] != true || st["stop_sent"] != true || st["transcript_path"] != path {
+		t.Errorf("state %v", st)
+	}
+
+	r = h.run("")
+	want := "[ctx] 16% used (160000 of 1000000 tokens), started at 4%, early warning at 50%, stop at 75%.\n"
+	if r.code != 0 || r.stdout != want {
+		t.Errorf("got %+v, want %q", r, want)
+	}
+}
+
+func TestArmRemovesStaleState(t *testing.T) {
+	h := newHarness(t)
+	h.env["CLAUDE_CODE_SESSION_ID"] = "old"
+	h.arm("75", "claude-sonnet-5")
+	h.env["CLAUDE_CODE_SESSION_ID"] = "recent"
+	h.arm("75", "claude-sonnet-5")
+	h.hookInput(map[string]string{"session_id": "recent", "transcript_path": filepath.Join(t.TempDir(), "gone.jsonl")})
+
+	now := time.Date(2026, 9, 24, 12, 0, 0, 0, time.UTC)
+	age := func(name string, d time.Duration) string {
+		path := filepath.Join(h.stateDir, name)
+		if err := os.Chtimes(path, now.Add(-d), now.Add(-d)); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	old := age("old.json", 7*24*time.Hour+time.Minute)
+	recent := age("recent.json", 6*24*time.Hour)
+	errorLog := age("error.log", 30*24*time.Hour)
+
+	h.env["CLAUDE_CODE_SESSION_ID"] = session
+	h.arm("75", "claude-sonnet-5")
+
+	if _, err := os.Stat(old); !os.IsNotExist(err) {
+		t.Errorf("stale state kept: %v", err)
+	}
+	for _, path := range []string{recent, errorLog, h.statePath()} {
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("%s removed: %v", path, err)
+		}
+	}
+}
