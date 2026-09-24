@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -293,4 +294,103 @@ func assertMode(t *testing.T, path string, want os.FileMode) {
 	if got := info.Mode().Perm(); got != want {
 		t.Errorf("%s mode %o, want %o", path, got, want)
 	}
+}
+
+func TestHookEmitsMessageAsAdditionalContext(t *testing.T) {
+	h := newHarness(t)
+	h.arm("75", "claude-sonnet-5")
+	path := h.transcript(8_000)
+	h.hook(path)
+	writeTranscript(t, path, 8_000, 150_000)
+	r := h.hook(path)
+	want := `{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"[ctx] 75% of context used (stop at 75%). Finish the current task. Start no new tasks."}}` + "\n"
+	if r.code != 0 || r.stdout != want {
+		t.Errorf("got %+v, want %q", r, want)
+	}
+}
+
+func TestHookSilentBelowEarlyWarning(t *testing.T) {
+	h := newHarness(t)
+	h.arm("75", "claude-sonnet-5")
+	path := h.transcript(8_000)
+	var out strings.Builder
+	for tokens := int64(8_000); tokens < 100_000; tokens += 7_000 {
+		writeTranscript(t, path, tokens)
+		r := h.hook(path)
+		out.WriteString(r.stdout)
+		out.WriteString(r.stderr)
+	}
+	if out.Len() != 0 {
+		t.Errorf("got %d bytes of output: %q", out.Len(), out.String())
+	}
+}
+
+func TestSessionsAreSeparate(t *testing.T) {
+	h := newHarness(t)
+	h.arm("75", "claude-sonnet-5")
+	h.env["CLAUDE_CODE_SESSION_ID"] = "other"
+	h.arm("75", "claude-sonnet-5")
+	ours, theirs := h.transcript(8_000), h.transcript(8_000)
+	h.hook(ours)
+	h.hookInput(map[string]string{"session_id": "other", "transcript_path": theirs})
+	writeTranscript(t, ours, 8_000, 160_000)
+	if r := h.hook(ours); !strings.Contains(r.stdout, "Start no new tasks.") {
+		t.Fatalf("got %+v", r)
+	}
+	writeTranscript(t, theirs, 8_000, 160_000)
+	r := h.hookInput(map[string]string{"session_id": "other", "transcript_path": theirs})
+	if !strings.Contains(r.stdout, "Start no new tasks.") {
+		t.Errorf("other session got %+v", r)
+	}
+}
+
+func TestConcurrentHooksSendOneStop(t *testing.T) {
+	h := newHarness(t)
+	h.arm("75", "claude-sonnet-5")
+	path := h.transcript(8_000)
+	h.hook(path)
+	writeTranscript(t, path, 8_000, 170_000)
+	input, _ := json.Marshal(map[string]string{"session_id": session, "transcript_path": path})
+
+	const processes = 10
+	cmds := make([]*exec.Cmd, processes)
+	outs := make([]*bytes.Buffer, processes)
+	for i := range cmds {
+		cmds[i] = exec.Command(os.Args[0], "hook")
+		cmds[i].Env = append(os.Environ(), "CTX_TEST_AS_CTX=1", "XDG_STATE_HOME="+h.env["XDG_STATE_HOME"])
+		cmds[i].Stdin = bytes.NewReader(input)
+		outs[i] = &bytes.Buffer{}
+		cmds[i].Stdout = outs[i]
+	}
+	for _, c := range cmds {
+		if err := c.Start(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stops := 0
+	for i, c := range cmds {
+		if err := c.Wait(); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(outs[i].String(), "Start no new tasks.") {
+			stops++
+		}
+	}
+	if stops != 1 {
+		t.Errorf("%d stop messages, want 1", stops)
+	}
+}
+
+func TestMain(m *testing.M) {
+	if os.Getenv("CTX_TEST_AS_CTX") == "1" {
+		os.Exit(cli.Run(cli.Env{
+			Args:   os.Args[1:],
+			Stdin:  os.Stdin,
+			Stdout: os.Stdout,
+			Stderr: os.Stderr,
+			Getenv: os.Getenv,
+			Now:    time.Now,
+		}))
+	}
+	os.Exit(m.Run())
 }
