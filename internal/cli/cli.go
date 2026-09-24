@@ -129,6 +129,9 @@ func hook(env Env, store state.Store) int {
 		message = budget.Observe(st, tokens, in.TranscriptPath)
 		return nil
 	})
+	if err != nil && !errors.Is(err, state.ErrNotArmed) && !errors.Is(err, state.ErrInvalidSession) {
+		store.LogError(in.SessionID, err, env.Now())
+	}
 	if err == nil && message != "" {
 		json.NewEncoder(env.Stdout).Encode(hookOutput{HookSpecificOutput: hookSpecificOutput{
 			HookEventName:     "PostToolUse",

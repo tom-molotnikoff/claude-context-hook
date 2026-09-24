@@ -3,6 +3,7 @@ package state
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -65,6 +66,18 @@ func (s Store) Arm(session string, threshold int, window int64, now time.Time) (
 		*st = State{Threshold: threshold, Window: window, ArmedAt: now}
 		return nil
 	})
+}
+
+func (s Store) LogError(session string, cause error, now time.Time) error {
+	f, err := os.OpenFile(filepath.Join(s.dir, "error.log"), os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o600)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(f, "%s %s %v\n", now.UTC().Format(time.RFC3339), session, cause)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	return err
 }
 
 func (s Store) path(session string) (string, error) {
