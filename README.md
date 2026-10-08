@@ -7,7 +7,7 @@ A Claude Code plugin that tells an agent when its context is filling up, so it c
 Releases carry binaries for Linux (amd64 and arm64) and Apple Silicon Macs. Pick the directory for your platform, then download, unzip and install:
 
 ```bash
-tag=v0.1.0
+tag=v1.0.0
 dir=~/.local/share/ctx/"$tag"                        # Linux
 dir=~/Library/Application\ Support/ctx/"$tag"        # macOS
 curl -fsSLO https://github.com/tom-molotnikoff/claude-context-hook/releases/download/"$tag"/ctx-"$tag".zip
