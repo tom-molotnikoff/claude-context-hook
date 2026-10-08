@@ -1,6 +1,7 @@
 package state_test
 
 import (
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -60,5 +61,27 @@ func TestUpdateOfUnarmedSession(t *testing.T) {
 	})
 	if err != state.ErrNotArmed || called {
 		t.Errorf("got %v, called %v", err, called)
+	}
+}
+
+func TestDirFollowsPlatformConvention(t *testing.T) {
+	cases := []struct {
+		name string
+		goos string
+		env  map[string]string
+		want string
+	}{
+		{"linux", "linux", map[string]string{"HOME": "/home/u"}, "/home/u/.local/state/ctx"},
+		{"darwin", "darwin", map[string]string{"HOME": "/Users/u"}, "/Users/u/Library/Application Support/ctx"},
+		{"linux with XDG_STATE_HOME", "linux", map[string]string{"HOME": "/home/u", "XDG_STATE_HOME": "/x"}, "/x/ctx"},
+		{"darwin with XDG_STATE_HOME", "darwin", map[string]string{"HOME": "/Users/u", "XDG_STATE_HOME": "/x"}, "/x/ctx"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := state.Dir(c.goos, func(k string) string { return c.env[k] })
+			if got != filepath.FromSlash(c.want) {
+				t.Errorf("got %q, want %q", got, c.want)
+			}
+		})
 	}
 }
