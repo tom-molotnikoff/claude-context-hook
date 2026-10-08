@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"time"
 )
@@ -34,11 +35,18 @@ type Store struct {
 }
 
 func Open(getenv func(string) string) Store {
-	base := getenv("XDG_STATE_HOME")
-	if base == "" {
-		base = filepath.Join(getenv("HOME"), ".local", "state")
+	return Store{dir: Dir(runtime.GOOS, getenv)}
+}
+
+func Dir(goos string, getenv func(string) string) string {
+	if base := getenv("XDG_STATE_HOME"); base != "" {
+		return filepath.Join(base, "ctx")
 	}
-	return Store{dir: filepath.Join(base, "ctx")}
+	home := getenv("HOME")
+	if goos == "darwin" {
+		return filepath.Join(home, "Library", "Application Support", "ctx")
+	}
+	return filepath.Join(home, ".local", "state", "ctx")
 }
 
 func (s Store) Load(session string) (State, error) {

@@ -13,7 +13,9 @@ mkdir -p "$stage/.claude-plugin" "$stage/bin" "$stage/hooks" "$stage/skills/budg
 cp "$root/.claude-plugin/marketplace.json" "$stage/.claude-plugin/"
 jq --arg version "${tag#v}" '.version = $version' "$root/.claude-plugin/plugin.json" >"$stage/.claude-plugin/plugin.json"
 cp "$root/bin/ctx" "$stage/bin/"
-(cd "$root" && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o "$stage/bin/ctx-linux-amd64" ./cmd/ctx)
+for target in linux/amd64 linux/arm64 darwin/arm64; do
+	(cd "$root" && CGO_ENABLED=0 GOOS=${target%/*} GOARCH=${target#*/} go build -trimpath -o "$stage/bin/ctx-${target%/*}-${target#*/}" ./cmd/ctx)
+done
 cp "$root/hooks/hooks.json" "$stage/hooks/"
 cp "$root/skills/budget/SKILL.md" "$stage/skills/budget/"
 cp "$root/install.sh" "$stage/"

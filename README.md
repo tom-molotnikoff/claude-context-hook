@@ -4,11 +4,11 @@ A Claude Code plugin that tells an agent when its context is filling up, so it c
 
 ## Install
 
-On linux/amd64, with `gh` logged in:
+Releases carry binaries for Linux (amd64 and arm64) and Apple Silicon Macs.
 
 ```bash
 tag=v0.1.0
-gh release download "$tag" --repo tom-molotnikoff/claude-context-hook
+curl -fsSLO https://github.com/tom-molotnikoff/claude-context-hook/releases/download/"$tag"/ctx-"$tag".zip
 mkdir -p ~/.local/share/ctx/"$tag"
 unzip -q ctx-"$tag".zip -d ~/.local/share/ctx/"$tag"
 ~/.local/share/ctx/"$tag"/install.sh
@@ -18,6 +18,8 @@ unzip -q ctx-"$tag".zip -d ~/.local/share/ctx/"$tag"
 
 To upgrade or roll back, install another version the same way. To go back to a version that is already unpacked, run its `install.sh` again. Whichever was installed last is active in the next session.
 
+State lives in `${XDG_STATE_HOME:-~/.local/state}/ctx` on Linux and `~/Library/Application Support/ctx` on macOS. `XDG_STATE_HOME` overrides the default on either.
+
 ## Release
 
 Push a tag matching `v*`. The release workflow runs `go test ./...`, then builds `ctx-<tag>.zip` with `scripts/package.sh` and attaches it to a GitHub release.
@@ -26,7 +28,11 @@ Push a tag matching `v*`. The release workflow runs `go test ./...`, then builds
 
 ```bash
 go test ./...
-go build -o bin/ctx-linux-amd64 ./cmd/ctx
+go build -o bin/ctx-"$(go env GOOS)"-"$(go env GOARCH)" ./cmd/ctx
 claude --plugin-dir .
 go run ./scripts/hookbench
 ```
+
+## License
+
+MIT, see [LICENSE](LICENSE).
