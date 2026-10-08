@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/ctx hook"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/ctx\" hook"
           }
         ]
       }
